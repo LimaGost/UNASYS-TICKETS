@@ -1,9 +1,11 @@
 #env
 .env
 .env.*
-# .env.production não tem segredo nenhum (só VITE_API_URL="") - é config de
-# build necessária pra gerar o bundle certo em produção, precisa ser versionada.
+# Exceções: esses arquivos não têm segredo nenhum, são modelo/config -
+# precisam ser versionados (o padrão .env.* acima esconderia os dois).
 !.env.production
+!.env.example
+!**/.env.example
 
 # Logs
 logs

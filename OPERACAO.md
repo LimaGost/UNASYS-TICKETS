@@ -10,28 +10,27 @@ ver [MIGRATION.md](MIGRATION.md). Este documento aqui é só operação.
 
 ## 1. Como o sistema é organizado
 
-Quatro peças, cada uma com um papel diferente:
+Cinco peças, cada uma com um papel diferente:
 
 | Peça | O que é | Quando você mexe nela |
 |---|---|---|
 | **Seu PC** | Onde você edita o código (com ajuda do Claude Code) e testa antes de publicar | Sempre que for mudar alguma coisa |
-| **VPS da Hostinger** | O computador na nuvem onde o sistema roda de verdade, 24h | Quando publica uma mudança, ou quando algo trava e precisa reiniciar |
+| **GitHub** | Repositório Git privado (`github.com/LimaGost/UNASYS-TICKETS`) - histórico de todas as mudanças, e é de lá que a VPS busca o código | Todo `git push` depois de uma mudança |
+| **VPS da Hostinger** | O computador na nuvem onde o sistema roda de verdade, 24h | Quando publica uma mudança (`git pull`), ou quando algo trava e precisa reiniciar |
 | **CloudPanel** | Painel visual (site) pra administrar a VPS sem precisar saber Linux de cor - domínios, SSL, ver arquivos | Configuração de infraestrutura (domínio, certificado, etc.) - raramente no dia a dia |
 | **PostgreSQL** | O banco de dados, instalado dentro da própria VPS | Quando quer consultar/editar dados diretamente (em vez de pela tela do sistema) |
 
-Fluxo típico de uma mudança: **você edita no PC → testa local → envia pra
-VPS → reinicia o processo lá → pronto, está no ar**. Não existe "aprovação"
-nem "build automático" no meio - é você (ou o Claude Code, com sua
-autorização) quem aciona cada passo manualmente, via terminal.
+Fluxo típico de uma mudança: **você edita no PC → testa local → `git commit`
++ `git push` pro GitHub → na VPS, `git pull` + rebuild + reinicia → pronto,
+está no ar**. Não existe "aprovação" nem CI/CD automático no meio - é você
+(ou o Claude Code, com sua autorização) quem aciona cada passo manualmente,
+via terminal. Ver a seção 3 para o passo a passo completo.
 
-**Sobre "commit"**: hoje este projeto **não tem controle de versão (Git)**
-configurado - ou seja, não existe um histórico de commits, branches, nem
-backup automático das mudanças de código. Publicar uma mudança aqui
-significa literalmente copiar os arquivos pro servidor (via `scp`), não
-"dar commit e fazer deploy" como em projetos com Git+CI/CD. Se quiser
-isso (recomendável, é uma rede de segurança boa de ter), é só pedir pra
-configurar um repositório Git - pode ficar só local no seu PC (com backup
-em algum lugar) ou num serviço como GitHub/GitLab.
+**Sobre autenticação com o GitHub**: usamos chave SSH, não senha nem token.
+Seu PC tem uma chave cadastrada na sua conta pessoal do GitHub (pode dar
+push). A VPS tem uma chave **separada**, cadastrada como "Deploy Key" só
+nesse repositório, com permissão **somente leitura** (só consegue `git
+pull`, nunca `git push`) - por segurança, já que é um servidor de produção.
 
 ## 2. Acessar o banco de dados
 
@@ -89,62 +88,68 @@ sistema quando possível.
 
 ## 3. Publicar uma mudança de código (deploy)
 
-### 3.1 Mudou algo no back-end (pasta `server/`)
+O código mora em `~/app` na VPS (um clone Git do repositório
+`github.com/LimaGost/UNASYS-TICKETS`) - substituiu o método antigo de copiar
+arquivo por arquivo via `scp`.
 
-No seu PC, na raiz do projeto:
+### 3.1 No seu PC: commitar e enviar pro GitHub
+
+Na raiz do projeto, depois de fazer e testar suas mudanças:
 ```powershell
-scp -r server/src hstgr-srv1879086@srv1879086.hstgr.cloud:/home/hstgr-srv1879086/htdocs/srv1879086.hstgr.cloud/
+git add -A
+git status              # confira o que vai ser commitado antes de seguir
+git commit -m "Descreva a mudança em poucas palavras"
+git push
 ```
-*(se além de `src/` você também mudou `server/prisma/schema.prisma`, `server/package.json`
-ou `server/package-lock.json`, inclua esses caminhos no mesmo comando também)*
 
-Na VPS:
+### 3.2 Na VPS: baixar e publicar
+
 ```bash
 ssh root@srv1879086.hstgr.cloud
 su - hstgr-srv1879086
-cd htdocs/srv1879086.hstgr.cloud
-npm install                # só se mudou package.json
-npx prisma generate        # só se mudou schema.prisma
-npx prisma db push         # só se mudou schema.prisma (aplica no banco real)
+cd ~/app
+git pull
+```
+
+Depois, só rode as partes que mudaram:
+
+**Mudou algo em `server/`:**
+```bash
+cd ~/app/server
+npm install          # só se mudou server/package.json
+npx prisma generate  # só se mudou server/prisma/schema.prisma
+npx prisma db push   # só se mudou server/prisma/schema.prisma (aplica no banco real)
 npm run build
 pm2 restart unasys-api --update-env
 curl -I http://localhost:3001/health
 ```
 
-### 3.2 Mudou algo no front-end (as telas React)
-
-No seu PC, na raiz do projeto:
-```powershell
-npm run build
-scp -r dist hstgr-srv1879086@srv1879086.hstgr.cloud:/home/hstgr-srv1879086/htdocs/srv1879086.hstgr.cloud/frontend-dist
-```
-
-Na VPS, só precisa reiniciar (o front-end é servido pelo mesmo processo do
-back-end, então um `pm2 restart` já pega os arquivos novos - mas geralmente
-nem precisa, já que são arquivos estáticos servidos direto do disco):
+**Mudou algo no front-end (`src/`, telas React):**
 ```bash
+cd ~/app
+npm install           # só se mudou package.json (raiz)
+npm run build
 pm2 restart unasys-api
 ```
 
-**Nota técnica**: como a pasta `server/src` tem muitas subpastas, o `scp`
-do Windows às vezes falha com "failed to upload directory" nesse caso
-específico. Se acontecer, use o método alternativo com `tar` (empacotar
-antes de enviar):
-```powershell
-tar -czf server-src.tar.gz -C server src
-scp server-src.tar.gz hstgr-srv1879086@srv1879086.hstgr.cloud:/home/hstgr-srv1879086/htdocs/srv1879086.hstgr.cloud/
-```
-```bash
-# na VPS
-rm -rf src
-tar -xzf server-src.tar.gz
-rm server-src.tar.gz
-```
+**Mudou o `.gitignore`/estrutura mas não sabe o que exatamente rebuildar**:
+rodar os dois blocos acima inteiros não faz mal nenhum, só demora um pouco
+mais.
+
+### 3.3 Se algo der errado no meio do caminho
+
+- `git pull` reclamando de mudanças locais não commitadas na VPS: isso não
+  deveria acontecer (a VPS só lê, nunca edita o código - só o `.env`, que
+  não é rastreado pelo Git). Se acontecer, rode `git status` pra ver o que
+  mudou antes de decidir descartar (`git checkout -- .`) ou guardar.
+- Erro de compilação (`tsc`/`vite build` falhando) depois do `git pull`:
+  quase sempre falta rodar `npm install` antes (uma dependência nova foi
+  adicionada no `package.json`).
 
 ## 4. Operar o servidor no dia a dia
 
 Depois de `ssh root@srv1879086.hstgr.cloud` → `su - hstgr-srv1879086` →
-`cd htdocs/srv1879086.hstgr.cloud`:
+`cd ~/app`:
 
 | O que você quer fazer | Comando |
 |---|---|
@@ -172,10 +177,11 @@ via terminal (SSH). Use o CloudPanel quando precisar de:
 | O quê | Endereço / comando |
 |---|---|
 | Sistema em produção (o que os usuários acessam) | `https://tickets.unasyshub.com.br` (domínio próprio; `https://srv1879086.hstgr.cloud` continua funcionando também, aponta pro mesmo lugar) |
+| Repositório no GitHub | `https://github.com/LimaGost/UNASYS-TICKETS` (privado) |
 | CloudPanel | `https://179.198.111.151:8443` |
 | Conectar na VPS | `ssh root@srv1879086.hstgr.cloud` |
 | Túnel do banco (pra usar DBeaver etc. do PC) | `ssh -L 5432:localhost:5432 root@srv1879086.hstgr.cloud -p 22` |
-| Pasta do site na VPS | `/home/hstgr-srv1879086/htdocs/srv1879086.hstgr.cloud/` |
+| Pasta do código na VPS (clone Git) | `/home/hstgr-srv1879086/app/` |
 | Senhas e segredos reais | [CREDENTIALS.md](CREDENTIALS.md) |
 
 ## 7. Problemas comuns
@@ -195,5 +201,17 @@ via terminal (SSH). Use o CloudPanel quando precisar de:
   colou um bloco de texto com aspas que não fechou. Aperte `Ctrl+C` pra
   cancelar e recomeçar - ou use `echo 'VARIAVEL="valor"' >> .env` pra
   acrescentar uma linha só, sem abrir editor nenhum.
-- **`scp` de pastas grandes falha ("failed to upload directory")**: bug
-  conhecido do `scp` do Windows. Use o método com `tar` (seção 3.2 acima).
+- **Depois de instalar `git`/`gh` no Windows, o PowerShell diz "não é
+  reconhecido como cmdlet"**: o PATH só é lido quando o PowerShell abre -
+  feche e abra uma janela nova (ou rode `$env:Path =
+  [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" +
+  [System.Environment]::GetEnvironmentVariable("Path","User")` pra
+  atualizar sem reabrir).
+- **Um arquivo de código não aparece no `git status`/não foi versionado**:
+  confira se algum `.gitignore` (o da raiz ou o de `server/.gitignore`) não
+  está acidentalmente escondendo ele. Regra sem barra no início (tipo
+  `uploads/`) casa em **qualquer profundidade** da pasta - já aconteceu de
+  isso esconder `server/src/uploads/` (código de verdade) por engano, só
+  queríamos ignorar `server/uploads/` (arquivos enviados por usuários). Use
+  `git check-ignore -v caminho/do/arquivo` pra descobrir qual regra está
+  pegando.
