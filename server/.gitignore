@@ -1,4 +1,7 @@
 node_modules/
 dist/
 .env
-uploads/
+# Barra no início: só ignora server/uploads (armazenamento de anexos em
+# runtime) - sem a barra, casaria com qualquer pasta "uploads" em qualquer
+# profundidade, inclusive server/src/uploads (código-fonte real).
+/uploads/
