@@ -1,10 +1,12 @@
 import React from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/api/apiClient";
+import { useAuth } from "@/lib/AuthContext";
 import { Navigate } from "react-router-dom";
 import { Clock } from "lucide-react";
 
 function AguardandoPermissoes() {
+  const { logout } = useAuth();
   return (
     <div className="min-h-screen flex items-center justify-center" style={{ background: "#080A12" }}>
       <div className="text-center max-w-md px-6">
@@ -18,7 +20,7 @@ function AguardandoPermissoes() {
           Por favor, aguarde o administrador configurar o seu perfil.
         </p>
         <button
-          onClick={() => api.auth.logout()}
+          onClick={() => logout()}
           className="px-4 py-2 rounded-lg text-sm font-medium"
           style={{ background: "rgba(255,255,255,0.05)", color: "#9ca3af", border: "1px solid rgba(255,255,255,0.1)" }}>
           Sair

@@ -3,6 +3,7 @@ import { Link, useLocation } from "react-router-dom";
 import { createPageUrl } from "./utils";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/api/apiClient";
+import { useAuth } from "@/lib/AuthContext";
 import NotificationBell from "./components/notifications/NotificationBell";
 import TabBarInline from "./components/TabBarInline";
 import { useTheme } from "@/lib/ThemeContext";
@@ -61,6 +62,7 @@ export default function Layout({ children, currentPageName }) {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const { theme, toggleTheme } = useTheme();
+  const { logout } = useAuth();
 
   const { data: currentUser } = useQuery({
     queryKey: ["currentUser"],
@@ -322,7 +324,7 @@ export default function Layout({ children, currentPageName }) {
                 </p>
               </div>
               <button
-                onClick={() => api.auth.logout()}
+                onClick={() => logout()}
                 className="w-7 h-7 flex items-center justify-center rounded-md flex-shrink-0 transition-colors cursor-pointer text-muted-foreground hover:text-destructive hover:bg-destructive/10"
                 title="Sair"
                 aria-label="Sair"
