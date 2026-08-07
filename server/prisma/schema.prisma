@@ -1,0 +1,1000 @@
+// Schema do banco de dados - Unasys Tickets
+// 48 entidades do sistema.
+//
+// Convenções:
+// - id: UUID (CHAR 36), para preservar os IDs originais na migração de dados.
+// - created_date / updated_date: mesmos nomes que a API expõe, para que a
+//   resposta continue no formato que o frontend já espera.
+// - Campos de array/objeto (tags, columns, actions, attachments...) -> Json.
+// - Enums (urgency, status...) -> String, validados na aplicação (evita
+//   ALTER TABLE toda vez que uma configuração ganha um valor novo).
+// - Sem foreign keys formais entre entidades - os relacionamentos são só
+//   por convenção de campo, ex: ticket_id. Mantido assim de propósito na
+//   Fase 1 para simplicidade; pode-se endurecer com @relation depois que
+//   os dados estiverem migrados.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ────────────────────────────────────────────────────────────────────────
+// Pessoas / Autenticação
+// ────────────────────────────────────────────────────────────────────────
+
+model User {
+  id                      String   @id @default(uuid()) @db.Char(36)
+  email                   String   @unique @db.VarChar(191)
+  password_hash           String
+  full_name               String?
+  role                    String   @default("user") // admin | user
+  tipo_perfil             String? // interno | cliente
+  cliente_implantacao_id  String? // legado - implantação principal vinculada
+  lojas_vinculadas        Json? // implantações (lojas) vinculadas (usuário cliente)
+  cnpj_vinculado          String?
+  cliente_vertical        String?
+  vertical                String? // vertical de acesso do usuário interno
+  can_access_all_verticals Boolean @default(false)
+  cargo                   String? // Diretor | Analista Senior | Analista Interno
+  avatar_url              String?
+  email_signature         String?  @db.Text
+  is_active               Boolean  @default(true)
+  refresh_token_hash      String? // rotação de refresh token
+  created_date            DateTime @default(now())
+  updated_date            DateTime @updatedAt
+
+  @@index([vertical])
+  @@index([tipo_perfil])
+  @@map("users")
+}
+
+model Colaborador {
+  id            String   @id @default(uuid()) @db.Char(36)
+  nome          String
+  cargo         String?
+  email         String?
+  telefone      String?
+  departamento  String?
+  is_vendedor   Boolean  @default(false)
+  status        String   @default("ativo")
+  created_date  DateTime @default(now())
+  updated_date  DateTime @updatedAt
+
+  @@map("colaboradores")
+}
+
+model PessoaContato {
+  id               String   @id @default(uuid()) @db.Char(36)
+  nome             String
+  email            String?
+  telefone         String?
+  funcao           String?
+  td_identificado  Boolean  @default(false)
+  client_ids       Json?
+  created_date     DateTime @default(now())
+  updated_date     DateTime @updatedAt
+
+  @@map("pessoas_contato")
+}
+
+model Notification {
+  id           String   @id @default(uuid()) @db.Char(36)
+  user_email   String
+  ticket_id    String?
+  ticket_title String?
+  type         String
+  title        String
+  message      String   @db.Text
+  read         Boolean  @default(false)
+  priority     String   @default("normal")
+  actor_name   String?
+  actor_email  String?
+  created_date DateTime @default(now())
+  updated_date DateTime @updatedAt
+
+  @@index([user_email])
+  @@index([ticket_id])
+  @@map("notifications")
+}
+
+model NotificationConfig {
+  id                             String   @id @default(uuid()) @db.Char(36)
+  user_email                     String   @unique
+  enable_browser_notifications   Boolean  @default(true)
+  enable_toast_notifications     Boolean  @default(true)
+  enable_email_notifications     Boolean  @default(false)
+  notify_on_assignment           Boolean  @default(true)
+  notify_on_status_change        Boolean  @default(true)
+  notify_on_comments             Boolean  @default(true)
+  notify_on_mention              Boolean  @default(true)
+  notify_on_sla_warning          Boolean  @default(true)
+  quiet_hours_enabled            Boolean  @default(false)
+  quiet_hours_start              String?
+  quiet_hours_end                String?
+  created_date                   DateTime @default(now())
+  updated_date                   DateTime @updatedAt
+
+  @@map("notification_configs")
+}
+
+model Aviso {
+  id           String   @id @default(uuid()) @db.Char(36)
+  texto        String   @db.Text
+  autor_nome   String?
+  autor_email  String?
+  cor          String?  @default("#8B5CF6")
+  pinned       Boolean  @default(false)
+  created_date DateTime @default(now())
+  updated_date DateTime @updatedAt
+
+  @@map("avisos")
+}
+
+// ────────────────────────────────────────────────────────────────────────
+// Clientes / Implantação
+// ────────────────────────────────────────────────────────────────────────
+
+model Client {
+  id                        String   @id @default(uuid()) @db.Char(36)
+  nome                      String?
+  email                     String?
+  emails_extras             Json?
+  empresa                   String?
+  nome_fantasia             String
+  cnpj                      String?
+  cnae                      String?
+  marca                     String?
+  grupo_economico           String?
+  cep                       String?
+  logradouro                String?
+  numero                    String?
+  complemento               String?
+  bairro                    String?
+  municipio                 String?
+  uf                        String?  @db.VarChar(2)
+  lat                       Float?
+  lng                       Float?
+  telefone                  String?
+  telefone2                 String?
+  telefone3                 String?
+  status                    String   @default("novo_cliente")
+  status_contrato           String   @default("ativo")
+  colaborador_responsavel_id String?
+  vertical_ids              Json?
+  segmento                  String?
+  lista_origem              String?
+  td_identificado           Boolean  @default(false)
+  concorrentes              Json?
+  // Campos legados (compatibilidade com integrações/e-mails antigos)
+  name                      String?
+  razao_social              String?
+  phone                     String?
+  contact_person            String?
+  vertical                  String?
+  notes                     String?  @db.Text
+  active                    Boolean  @default(true)
+  created_date              DateTime @default(now())
+  updated_date              DateTime @updatedAt
+
+  @@index([email])
+  @@index([cnpj])
+  @@index([vertical])
+  @@map("clients")
+}
+
+model ClientInteracao {
+  id              String   @id @default(uuid()) @db.Char(36)
+  client_id       String
+  tipo            String
+  descricao       String?  @db.Text
+  colaborador_id  String?
+  colaborador_nome String?
+  data_hora       DateTime?
+  created_date    DateTime @default(now())
+  updated_date    DateTime @updatedAt
+
+  @@index([client_id])
+  @@map("client_interacoes")
+}
+
+model ClienteImplantacao {
+  id                       String   @id @default(uuid()) @db.Char(36)
+  usuario_id               String?
+  usuario_email            String
+  nome_empresa             String?
+  razao_social             String?
+  nome_fantasia            String?
+  cnpj                     String?
+  codigo_loja              String?
+  uf                       String?
+  cep                      String?
+  endereco                 String?
+  cidade                   String?
+  inscricao_estadual       String?
+  inscricao_municipal      String?
+  regime_tributario        String?
+  adquirente_cartao        String?
+  chave_pix                String?
+  socio_nome               String?
+  socio_cpf                String?
+  socio_telefone           String?
+  socio_email              String?
+  gestor_nome              String?
+  gestor_cargo             String?
+  gestor_email              String?
+  gestor_celular           String?
+  analista_responsavel     String?
+  analista_email           String?
+  status_geral             String   @default("aguardando")
+  progresso_percentual     Int      @default(0)
+  cadastro_enviado         Boolean  @default(false)
+  observacoes_analista     String?  @db.Text
+  emails_futuros           Json?
+  // usado extensivamente pelas funções (não estava no schema original,
+  // mas era gravado/lido em toda parte) - mantido explícito aqui.
+  vertical                 String?
+  created_date             DateTime @default(now())
+  updated_date             DateTime @updatedAt
+
+  @@index([usuario_email])
+  @@index([cnpj])
+  @@index([vertical])
+  @@map("clientes_implantacao")
+}
+
+model DocumentoCliente {
+  id                      String   @id @default(uuid()) @db.Char(36)
+  cliente_implantacao_id  String
+  nome                    String
+  obrigatorio             Boolean  @default(true)
+  status                  String   @default("pendente")
+  arquivo_url             String?
+  observacao_analista     String?  @db.Text
+  created_date            DateTime @default(now())
+  updated_date            DateTime @updatedAt
+
+  @@index([cliente_implantacao_id])
+  @@map("documentos_cliente")
+}
+
+model EtapaImplantacao {
+  id                        String   @id @default(uuid()) @db.Char(36)
+  ordem                     Int
+  titulo                    String
+  descricao                 String?  @db.Text
+  vertical                  String?
+  kanban_coluna             String?
+  libera_treinamento_coluna String?
+  modulo_treinamento_id     String?
+  created_date              DateTime @default(now())
+  updated_date              DateTime @updatedAt
+
+  @@index([vertical])
+  @@map("etapas_implantacao")
+}
+
+model ItemChecklist {
+  id                          String   @id @default(uuid()) @db.Char(36)
+  etapa_id                    String
+  ordem                       Int      @default(0)
+  titulo                      String
+  descricao_ajuda             String?  @db.Text
+  tipo                        String // obrigatorio | automatico | treinamento
+  responsavel                 String // cliente | analista
+  permite_anexo               Boolean  @default(false)
+  anexo_obrigatorio           Boolean  @default(false)
+  texto_analista               String?  @db.Text
+  requer_confirmacao_cliente  Boolean  @default(false)
+  created_date                DateTime @default(now())
+  updated_date                DateTime @updatedAt
+
+  @@index([etapa_id])
+  @@map("itens_checklist")
+}
+
+model ProgressoItem {
+  id                      String    @id @default(uuid()) @db.Char(36)
+  cliente_implantacao_id  String
+  item_id                 String
+  concluido               Boolean   @default(false)
+  concluido_em            DateTime?
+  concluido_por           String?
+  anexo_url               String?
+  anexo_nome              String?
+  confirmado_cliente      Boolean   @default(false)
+  created_date            DateTime  @default(now())
+  updated_date            DateTime  @updatedAt
+
+  @@index([cliente_implantacao_id])
+  @@index([item_id])
+  @@map("progresso_itens")
+}
+
+model ImplantacaoUsuario {
+  id                      String   @id @default(uuid()) @db.Char(36)
+  cliente_implantacao_id  String
+  usuario_id              String?
+  usuario_email           String
+  usuario_nome            String?
+  tipo_acesso             String   @default("gestor")
+  created_date            DateTime @default(now())
+  updated_date            DateTime @updatedAt
+
+  @@index([cliente_implantacao_id])
+  @@index([usuario_email])
+  @@map("implantacao_usuarios")
+}
+
+model ImplantacaoLog {
+  id                      String   @id @default(uuid()) @db.Char(36)
+  cliente_implantacao_id  String
+  tipo                    String
+  descricao               String   @db.Text
+  etapa_titulo            String?
+  item_titulo             String?
+  usuario_email           String?
+  usuario_nome            String?
+  valor_anterior          String?  @db.Text
+  valor_novo              String?  @db.Text
+  created_date            DateTime @default(now())
+  updated_date            DateTime @updatedAt
+
+  @@index([cliente_implantacao_id])
+  @@map("implantacao_logs")
+}
+
+model NotificacaoCliente {
+  id                      String   @id @default(uuid()) @db.Char(36)
+  cliente_implantacao_id  String
+  titulo                  String
+  mensagem                String   @db.Text
+  tipo                    String   @default("info")
+  lida                    Boolean  @default(false)
+  created_date            DateTime @default(now())
+  updated_date            DateTime @updatedAt
+
+  @@index([cliente_implantacao_id])
+  @@map("notificacoes_cliente")
+}
+
+model ModuloTreinamento {
+  id                     String   @id @default(uuid()) @db.Char(36)
+  ordem                  Int
+  titulo                 String
+  descricao              String?  @db.Text
+  vertical               String?
+  duracao_minutos        Int?
+  video_url              String?
+  video_file_url         String?
+  documentacao_url       String?
+  nota_minima_aprovacao  Int      @default(70)
+  perguntas              Json?
+  created_date           DateTime @default(now())
+  updated_date           DateTime @updatedAt
+
+  @@index([vertical])
+  @@map("modulos_treinamento")
+}
+
+model ProgressoTreinamento {
+  id                      String    @id @default(uuid()) @db.Char(36)
+  cliente_implantacao_id  String
+  modulo_id               String
+  status                  String    @default("bloqueado")
+  nota_quiz               Float?
+  concluido_em            DateTime?
+  created_date            DateTime  @default(now())
+  updated_date            DateTime  @updatedAt
+
+  @@index([cliente_implantacao_id])
+  @@index([modulo_id])
+  @@map("progresso_treinamento")
+}
+
+// ────────────────────────────────────────────────────────────────────────
+// Kanban / SLA / Automação / Escalonamento
+// ────────────────────────────────────────────────────────────────────────
+
+model KanbanColumn {
+  id              String   @id @default(uuid()) @db.Char(36)
+  title           String
+  order           Int
+  color           String?
+  is_final        Boolean  @default(false)
+  required_fields Json?
+  created_date    DateTime @default(now())
+  updated_date    DateTime @updatedAt
+
+  @@map("kanban_columns")
+}
+
+model KanbanConfig {
+  id            String   @id @default(uuid()) @db.Char(36)
+  main_type     String // implantacao | suporte
+  vertical      String
+  ticket_type   String
+  columns       Json
+  active        Boolean  @default(true)
+  created_date  DateTime @default(now())
+  updated_date  DateTime @updatedAt
+
+  @@index([vertical, main_type, ticket_type])
+  @@map("kanban_configs")
+}
+
+model AutomationRule {
+  id                 String    @id @default(uuid()) @db.Char(36)
+  name               String
+  description        String?   @db.Text
+  vertical           String
+  active             Boolean   @default(true)
+  trigger_type       String
+  trigger_conditions Json?
+  actions            Json
+  execution_count    Int       @default(0)
+  last_executed_at   DateTime?
+  created_date       DateTime  @default(now())
+  updated_date       DateTime  @updatedAt
+
+  @@index([vertical, active, trigger_type])
+  @@map("automation_rules")
+}
+
+model Escalation {
+  id                           String    @id @default(uuid()) @db.Char(36)
+  ticket_id                    String
+  ticket_number                Int?
+  ticket_title                 String?
+  client_name                  String?
+  vertical                     String?
+  colaborador_email            String?
+  colaborador_nome             String?
+  escalated_by_email           String?
+  escalated_by_nome            String?
+  escalated_to_email           String?
+  escalated_to_nome            String?
+  nivel                        Int       @default(1)
+  motivo_categoria             String    @default("outro")
+  motivo                       String    @db.Text
+  status                       String    @default("aberto")
+  responsavel_tratativa_email  String?
+  responsavel_tratativa_nome   String?
+  plano_acao                   String?   @db.Text
+  causa_raiz                   String?   @db.Text
+  licoes_aprendidas            String?   @db.Text
+  acoes_preventivas            String?   @db.Text
+  necessidade_treinamento      Boolean   @default(false)
+  tipo_falha                   String    @default("nenhuma")
+  solucao_aplicada             String?   @db.Text
+  resultado_final              String?   @db.Text
+  ticket_created_date          DateTime?
+  encerrado_em                 DateTime?
+  created_date                 DateTime  @default(now())
+  updated_date                 DateTime  @updatedAt
+
+  @@index([ticket_id])
+  @@index([vertical])
+  @@map("escalations")
+}
+
+model EscalationConfig {
+  id                          String   @id @default(uuid()) @db.Char(36)
+  vertical                    String
+  ticket_type                 String?
+  auto_escalate_after_hours   Float?
+  escalate_to_role            String   @default("admin")
+  escalate_to_specific_user   String?
+  increase_urgency            Boolean  @default(true)
+  new_urgency_level           String   @default("alta")
+  send_notification           Boolean  @default(true)
+  notification_template       String?  @db.Text
+  active                      Boolean  @default(true)
+  created_date                DateTime @default(now())
+  updated_date                DateTime @updatedAt
+
+  @@index([vertical])
+  @@map("escalation_configs")
+}
+
+model EscalationEvent {
+  id            String   @id @default(uuid()) @db.Char(36)
+  escalation_id String
+  tipo          String   @default("comentario")
+  descricao     String   @db.Text
+  user_email    String?
+  user_name     String?
+  created_date  DateTime @default(now())
+  updated_date  DateTime @updatedAt
+
+  @@index([escalation_id])
+  @@map("escalation_events")
+}
+
+// ────────────────────────────────────────────────────────────────────────
+// Tickets
+// ────────────────────────────────────────────────────────────────────────
+
+model Ticket {
+  id                      String    @id @default(uuid()) @db.Char(36)
+  ticket_number           Int       @unique @default(autoincrement())
+  title                   String
+  main_type               String    @default("implantacao") // implantacao | suporte
+  client_id               String?
+  client_name             String?
+  client_email            String?
+  vertical                String?
+  ticket_type             String?
+  requester               String?
+  service_type            String?
+  category                String?
+  urgency                 String    @default("media")
+  status_column_id        String?
+  status_column_title     String?
+  sub_status              String?
+  assigned_to             String?
+  assigned_to_name        String?
+  expected_resolution     DateTime?
+  sla_hours               Float?
+  sla_breached            Boolean   @default(false)
+  sla_paused_at           DateTime?
+  description             String?   @db.Text
+  modulos                 Json?
+  observacoes_gerais      String?   @db.Text
+  contracted_hours        Float     @default(0)
+  total_normal_hours      Float     @default(0)
+  total_extra_hours       Float     @default(0)
+  notified                Boolean   @default(false)
+  closed_at               DateTime?
+  external_order_number   String?
+  external_customer_code  String?
+  external_reference      String?
+  external_system         String?
+  parent_ticket_id        String?
+  parent_ticket_number    Int?
+  parent_ticket_title     String?
+  created_date            DateTime  @default(now())
+  updated_date            DateTime  @updatedAt
+
+  @@index([vertical])
+  @@index([client_id])
+  @@index([assigned_to])
+  @@index([status_column_title])
+  @@index([main_type])
+  @@index([external_order_number])
+  @@index([external_reference])
+  @@index([external_customer_code])
+  @@map("tickets")
+}
+
+model TicketEvent {
+  id                 String   @id @default(uuid()) @db.Char(36)
+  ticket_id          String
+  type               String
+  description        String   @db.Text
+  old_value          String?  @db.Text
+  new_value          String?  @db.Text
+  user_email         String?
+  user_name          String?
+  visible_to_client  Boolean  @default(false)
+  email_sent         Boolean  @default(false)
+  created_date       DateTime @default(now())
+  updated_date       DateTime @updatedAt
+
+  @@index([ticket_id])
+  @@map("ticket_events")
+}
+
+model TicketEmail {
+  id                  String   @id @default(uuid()) @db.Char(36)
+  ticket_id           String
+  subject             String
+  body                String   @db.Text
+  from_email          String
+  from_name           String?
+  to                  Json
+  cc                  Json?
+  bcc                 Json?
+  direction           String // sent | received
+  gmail_message_id    String?
+  gmail_thread_id     String?
+  rfc_message_id      String?
+  reply_to_email_id   String?
+  is_reply            Boolean  @default(false)
+  attachments         Json?
+  visible_to_client   Boolean  @default(true)
+  created_date        DateTime @default(now())
+  updated_date        DateTime @updatedAt
+
+  @@index([ticket_id])
+  @@index([gmail_thread_id])
+  @@index([gmail_message_id])
+  @@index([rfc_message_id])
+  @@map("ticket_emails")
+}
+
+model TicketAttachment {
+  id                  String   @id @default(uuid()) @db.Char(36)
+  ticket_id           String
+  file_url            String
+  file_name           String
+  file_size           Int?
+  uploaded_by_name    String?
+  uploaded_by_email   String?
+  created_date        DateTime @default(now())
+  updated_date        DateTime @updatedAt
+
+  @@index([ticket_id])
+  @@map("ticket_attachments")
+}
+
+model TicketSession {
+  id             String    @id @default(uuid()) @db.Char(36)
+  ticket_id      String
+  started_at     DateTime
+  paused_at      DateTime?
+  ended_at       DateTime?
+  status         String    @default("active")
+  total_seconds  Int       @default(0)
+  user_email     String?
+  user_name      String?
+  created_date   DateTime  @default(now())
+  updated_date   DateTime  @updatedAt
+
+  @@index([ticket_id])
+  @@index([user_email])
+  @@map("ticket_sessions")
+}
+
+model TicketCustomField {
+  id                       String   @id @default(uuid()) @db.Char(36)
+  field_key                String
+  field_label              String
+  field_type               String
+  field_options            Json?
+  default_value            String?
+  required                 Boolean  @default(false)
+  visible_in_card          Boolean  @default(false)
+  visible_in_detail        Boolean  @default(true)
+  order                    Int      @default(0)
+  section                  String   @default("Informações")
+  column_span              Int      @default(1)
+  icon                     String?
+  vertical                 String
+  apply_to_ticket_types    Json?
+  active                   Boolean  @default(true)
+  created_date             DateTime @default(now())
+  updated_date             DateTime @updatedAt
+
+  @@index([vertical])
+  @@map("ticket_custom_fields")
+}
+
+model TicketCustomData {
+  id           String   @id @default(uuid()) @db.Char(36)
+  ticket_id    String
+  field_key    String
+  field_value  String?  @db.Text
+  created_date DateTime @default(now())
+  updated_date DateTime @updatedAt
+
+  @@index([ticket_id])
+  @@map("ticket_custom_data")
+}
+
+model TicketKnowledgeLink {
+  id              String   @id @default(uuid()) @db.Char(36)
+  ticket_id       String
+  article_id      String
+  article_title   String?
+  linked_by_email String?
+  linked_by_name  String?
+  was_helpful     Boolean  @default(false)
+  created_date    DateTime @default(now())
+  updated_date    DateTime @updatedAt
+
+  @@index([ticket_id])
+  @@index([article_id])
+  @@map("ticket_knowledge_links")
+}
+
+model TicketType {
+  id                 String   @id @default(uuid()) @db.Char(36)
+  name               String
+  vertical           String
+  main_type          String   @default("implantacao")
+  duration_unit      String?
+  default_sla_hours  Float?
+  color              String?
+  active             Boolean  @default(true)
+  created_date       DateTime @default(now())
+  updated_date       DateTime @updatedAt
+
+  @@index([vertical, main_type])
+  @@map("ticket_types")
+}
+
+model TimeEntry {
+  id                  String   @id @default(uuid()) @db.Char(36)
+  ticket_id           String
+  ticket_title        String?
+  date                DateTime @db.Date
+  start_time          String
+  end_time            String
+  start_time2         String?
+  end_time2           String?
+  description         String?  @db.Text
+  normal_hours        Float?
+  extra_hours         Float?
+  total_minutes       Int?
+  hour_type           String   @default("normal")
+  activities          Json?
+  attachments         Json?
+  notify_client       Boolean  @default(false)
+  email_sent_to       String?
+  technician_email    String?
+  technician_name     String?
+  created_date        DateTime @default(now())
+  updated_date         DateTime @updatedAt
+
+  @@index([ticket_id])
+  @@index([technician_email])
+  @@map("time_entries")
+}
+
+// ────────────────────────────────────────────────────────────────────────
+// Base de Conhecimento
+// ────────────────────────────────────────────────────────────────────────
+
+model KnowledgeArticle {
+  id                 String    @id @default(uuid()) @db.Char(36)
+  title              String
+  content            String?   @db.Text
+  summary            String?   @db.Text
+  type               String    @default("documento")
+  category           String?
+  tags               Json?
+  vertical           String
+  status             String    @default("publicado")
+  visible_to_client  Boolean   @default(false)
+  views              Int       @default(0)
+  helpful_count      Int       @default(0)
+  attachments        Json?
+  video_url          String?
+  notion_page_id     String?
+  notion_url         String?
+  last_synced        DateTime?
+  created_date       DateTime  @default(now())
+  updated_date       DateTime  @updatedAt
+
+  @@index([vertical])
+  @@index([notion_page_id])
+  @@map("knowledge_articles")
+}
+
+model KnowledgeCategory {
+  id            String   @id @default(uuid()) @db.Char(36)
+  name          String
+  description   String?  @db.Text
+  vertical      String
+  color         String?  @default("#8B5CF6")
+  icon          String?
+  order         Int      @default(0)
+  active        Boolean  @default(true)
+  created_date  DateTime @default(now())
+  updated_date  DateTime @updatedAt
+
+  @@index([vertical])
+  @@map("knowledge_categories")
+}
+
+model ResponseTemplate {
+  id            String   @id @default(uuid()) @db.Char(36)
+  name          String
+  category      String?
+  subject       String?
+  content       String   @db.Text
+  tags          Json?
+  vertical      String?
+  main_type     String   @default("geral")
+  usage_count   Int      @default(0)
+  active        Boolean  @default(true)
+  created_date  DateTime @default(now())
+  updated_date  DateTime @updatedAt
+
+  @@index([vertical])
+  @@map("response_templates")
+}
+
+model QuickLink {
+  id            String   @id @default(uuid()) @db.Char(36)
+  title         String
+  url           String
+  description   String?
+  category      String?
+  vertical      String?
+  icon          String?
+  active        Boolean  @default(true)
+  created_date  DateTime @default(now())
+  updated_date  DateTime @updatedAt
+
+  @@index([vertical])
+  @@map("quick_links")
+}
+
+model DailyRoutine {
+  id                 String   @id @default(uuid()) @db.Char(36)
+  title              String
+  description        String?  @db.Text
+  steps              Json?
+  frequency          String   @default("diaria")
+  category           String?
+  vertical           String?
+  responsible        String?
+  estimated_minutes  Int?
+  active             Boolean  @default(true)
+  created_date       DateTime @default(now())
+  updated_date       DateTime @updatedAt
+
+  @@index([vertical])
+  @@map("daily_routines")
+}
+
+// ────────────────────────────────────────────────────────────────────────
+// Configuração de negócio
+// ────────────────────────────────────────────────────────────────────────
+
+model ServiceType {
+  id            String   @id @default(uuid()) @db.Char(36)
+  name          String
+  ticket_type   String?
+  vertical      String
+  active        Boolean  @default(true)
+  created_date  DateTime @default(now())
+  updated_date  DateTime @updatedAt
+
+  @@index([vertical])
+  @@map("service_types")
+}
+
+model ServiceCategory {
+  id            String   @id @default(uuid()) @db.Char(36)
+  name          String
+  color         String?
+  vertical      String
+  active        Boolean  @default(true)
+  created_date  DateTime @default(now())
+  updated_date  DateTime @updatedAt
+
+  @@index([vertical])
+  @@map("service_categories")
+}
+
+model ServiceFormConfig {
+  id            String   @id @default(uuid()) @db.Char(36)
+  service_type  String
+  vertical      String
+  fields_config Json
+  active        Boolean  @default(true)
+  created_date  DateTime @default(now())
+  updated_date  DateTime @updatedAt
+
+  @@index([vertical, service_type])
+  @@map("service_form_configs")
+}
+
+model SuporteConfig {
+  id                       String   @id @default(uuid()) @db.Char(36)
+  vertical                 String
+  default_sla_hours        Int      @default(24)
+  urgent_sla_hours         Int      @default(4)
+  critical_sla_hours       Int      @default(2)
+  auto_assign_enabled      Boolean  @default(false)
+  auto_assign_strategy     String   @default("round_robin")
+  allowed_agents           Json?
+  require_client_approval  Boolean  @default(false)
+  enable_chat              Boolean  @default(false)
+  enable_phone_support     Boolean  @default(true)
+  business_hours_start     String   @default("08:00")
+  business_hours_end       String   @default("18:00")
+  work_days                Json?
+  active                   Boolean  @default(true)
+  created_date             DateTime @default(now())
+  updated_date              DateTime @updatedAt
+
+  @@index([vertical])
+  @@map("suporte_configs")
+}
+
+model Vertical {
+  id            String   @id @default(uuid()) @db.Char(36)
+  name          String
+  code          String   @unique
+  description   String?  @db.Text
+  color         String?  @default("#8B5CF6")
+  active        Boolean  @default(true)
+  created_date  DateTime @default(now())
+  updated_date  DateTime @updatedAt
+
+  @@map("verticals")
+}
+
+model SystemConfig {
+  id            String   @id @default(uuid()) @db.Char(36)
+  key           String   @unique
+  value         String   @db.Text
+  label         String?
+  created_date  DateTime @default(now())
+  updated_date  DateTime @updatedAt
+
+  @@map("system_configs")
+}
+
+model SyncState {
+  id            String   @id @default(uuid()) @db.Char(36)
+  key           String   @unique
+  history_id    String
+  created_date  DateTime @default(now())
+  updated_date  DateTime @updatedAt
+
+  @@map("sync_states")
+}
+
+// ────────────────────────────────────────────────────────────────────────
+// Agenda / Horas
+// ────────────────────────────────────────────────────────────────────────
+
+model Appointment {
+  id            String   @id @default(uuid()) @db.Char(36)
+  title         String
+  description   String?  @db.Text
+  date          DateTime @db.Date
+  start_time    String?
+  end_time      String?
+  vertical      String
+  type          String   @default("reuniao")
+  client_id     String?
+  client_name   String?
+  ticket_id     String?
+  ticket_title  String?
+  attendees     Json?
+  owner_email   String?
+  owner_name    String?
+  color         String?  @default("#8B5CF6")
+  created_date  DateTime @default(now())
+  updated_date  DateTime @updatedAt
+
+  @@index([owner_email])
+  @@index([vertical])
+  @@map("appointments")
+}
+
+// ────────────────────────────────────────────────────────────────────────
+// WhatsApp / Metabot
+// ────────────────────────────────────────────────────────────────────────
+
+model WhatsAppAtendimentoVinculado {
+  id                 String    @id @default(uuid()) @db.Char(36)
+  implantacao_id     String
+  implantacao_nome   String?
+  attendance_id      String
+  contact_name       String
+  contact_number     String?
+  messages_count     Int       @default(0)
+  ticket_id          String?
+  hours_logged       Float     @default(0)
+  status             String    @default("ativo")
+  finalized_at       DateTime?
+  notes              String?   @db.Text
+  analyst_email      String?
+  created_date       DateTime  @default(now())
+  updated_date       DateTime  @updatedAt
+
+  @@index([implantacao_id])
+  @@index([attendance_id])
+  @@index([analyst_email])
+  @@map("whatsapp_atendimentos_vinculados")
+}
