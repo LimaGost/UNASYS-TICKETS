@@ -32,6 +32,46 @@ push). A VPS tem uma chave **separada**, cadastrada como "Deploy Key" só
 nesse repositório, com permissão **somente leitura** (só consegue `git
 pull`, nunca `git push`) - por segurança, já que é um servidor de produção.
 
+### Duas abas de terminal, dois papéis fixos
+
+Pra não se perder sobre "em qual computador esse comando vai rodar", use
+sempre duas abas de terminal no VS Code (ícone `+` no painel do terminal, ou
+`` Ctrl+Shift+` `` pra abrir uma nova):
+
+- **Aba 1 - seu PC**: nunca dá `ssh`. Usa pra `git add`/`commit`/`push` e
+  pra editar/testar código localmente. O prompt começa com
+  `PS C:\Users\...`.
+- **Aba 2 - VPS**: conecta uma vez (passos abaixo) e fica conectada. Usa pra
+  `git pull`, build e `pm2`. O prompt começa com
+  `hstgr-srv1879086@srv1879086:...`.
+
+### Como entrar na VPS (passo a passo)
+
+Na **Aba 2**:
+
+```powershell
+ssh root@srv1879086.hstgr.cloud
+```
+Pede a senha do usuário `root` da VPS (não é a mesma coisa que a senha do
+CloudPanel! essa fica salva no e-mail que a Hostinger mandou na criação da
+VPS, ou em hPanel → VPS → sua VPS → opção de ver/resetar senha do root -
+por segurança, essa senha nunca fica registrada nesta documentação).
+
+Depois de conectar como `root`, troque para o usuário do site (não pede
+senha - `root` pode virar qualquer usuário livremente):
+```bash
+su - hstgr-srv1879086
+```
+
+E entre na pasta do projeto:
+```bash
+cd ~/app
+```
+
+Pronto - o prompt deve mostrar algo como `hstgr-srv1879086@srv1879086:~/app$`.
+Pode deixar essa aba conectada o dia inteiro; só reconecta se fechar o VS
+Code ou a janela ficar muito tempo parada.
+
 ## 2. Acessar o banco de dados
 
 O banco (`unasys_tickets_db`, PostgreSQL) roda **dentro da VPS** e não é

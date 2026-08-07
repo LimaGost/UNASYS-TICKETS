@@ -5,10 +5,26 @@ import { runAfterCreate, runAfterDelete, runAfterUpdate } from './hooks';
 
 const READ_ONLY_FIELDS = ['id', 'created_date', 'updated_date', 'ticket_number'];
 
+// Campos DateTime com @db.Date (ex: TimeEntry.date, Appointment.date) exigem
+// uma string ISO-8601 completa - o frontend manda só "AAAA-MM-DD", que o
+// Prisma rejeita ("premature end of input"). Normaliza qualquer valor nesse
+// formato pra meia-noite UTC antes de passar pro Prisma.
+const DATE_ONLY_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+function normalizeDateOnlyFields(body: Record<string, unknown>): Record<string, unknown> {
+  const clone = { ...body };
+  for (const [key, value] of Object.entries(clone)) {
+    if (typeof value === 'string' && DATE_ONLY_RE.test(value)) {
+      clone[key] = new Date(`${value}T00:00:00.000Z`);
+    }
+  }
+  return clone;
+}
+
 function stripReadOnly(body: Record<string, unknown>): Record<string, unknown> {
   const clone = { ...body };
   for (const field of READ_ONLY_FIELDS) delete clone[field];
-  return clone;
+  return normalizeDateOnlyFields(clone);
 }
 
 function resolveEntity(req: Request, res: Response) {
